@@ -1,0 +1,5 @@
+module Balefire
+uses Plasmacore [export]
+
+$include "Balefire/Image.rogue"
+$include "Balefire/ImageAsset.rogue"

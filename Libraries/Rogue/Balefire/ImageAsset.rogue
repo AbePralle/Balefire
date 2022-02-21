@@ -1,0 +1,25 @@
+module Balefire
+uses Plasmacore
+
+class ImageAsset : Asset
+  METHODS
+    method init( name )
+      contingent
+        filepath = Plasmacore.find_asset_filepath( name )
+        sufficient (filepath?)
+        block name
+          if (not name.contains("Images/"))
+            name = "Images/" + name
+            filepath = Plasmacore.find_asset_filepath( name )
+            sufficient (filepath?)
+          endIf
+          filepath = Plasmacore.find_asset_filepath( name + ".png" )
+          sufficient (filepath?)
+          filepath = Plasmacore.find_asset_filepath( name + ".jpg" )
+          sufficient (filepath?)
+          filepath = Plasmacore.find_asset_filepath( name + ".jpeg" )
+          sufficient (filepath?)
+        endBlock
+      endContingent
+endClass
+
