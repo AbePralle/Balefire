@@ -22,7 +22,7 @@ class Balefire [essential singleton]
       Plasmacore.on_draw = this=>draw
 
     method configure
-      local ft_font = FreeTypeFont(["Helvetica","Arial"],16*2)
+      local ft_font = FreeTypeFont(["Helvetica","Arial"],16*2*3)
       ft_font.add( forEach in 32..126 )
       font = ft_font->Font
 

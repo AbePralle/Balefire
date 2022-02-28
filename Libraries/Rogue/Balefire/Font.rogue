@@ -2,8 +2,8 @@ module Balefire
 
 class Font
   PROPERTIES
-    height          : Real64
-    original_height : Real64
+    height          : Int32
+    scale           = XY(1,1)
     characters      = FontCharacterInfo[](128)
     kerning         : Int32[]
       # Format; kerning[] is indexed into by the "prev_ch" FontCharacterInfo.
@@ -35,32 +35,48 @@ class Font
       #
 
   METHODS
-    method init( original_height )
-      height = original_height
+    method init( @height )
 
     method add( ch:FontCharacterInfo )
       characters.expand_to_include( ch.character )
       characters[ch.character] = ch
 
-    method draw( text:String, position:XY, style=Style():Style )
-      draw( text, position.x, position.y, style )
+    method draw( text:String, position:XY, style=Style():Style, span=null:Span? )
+      draw( text, position.x, position.y, &=style, &=span )
 
-    method draw( text:StringBuilder, position:XY, style=Style():Style )
-      draw( text, position.x, position.y, style )
+    method draw( text:StringBuilder, position:XY, style=Style():Style, span=null:Span? )
+      draw( text, position.x, position.y, &=style, &=span )
 
-    method draw( text:String, x:Real64, y:Real64, style=Style():Style )
+    method draw( text:String, x:Real64, y:Real64, style=Style():Style, span=null:Span? )
       use builder = StringBuilder.pool
         builder.reserve( text.count )
         builder.print( text )
-        draw( builder, x, y, style )
+        draw( builder, x, y, &=style, &=span )
       endUse
 
-    method draw( text:StringBuilder, x:Real64, y:Real64, style=Style():Style )
+    method draw( text:StringBuilder, x:Real64, y:Real64, style=Style():Style, span=null:Span? )
+      localize height
+      height *= style.scale.y
+      local scale_x = style.scale.x
+      scale_x *= style.scale.x
+
+      if (not span) span = Span(0,text.count)
+      local i1 = span.value.index
+      local i2 = (i1 + span.value.count) - 1
+
+      if (style.anchor != Anchor.TOP_LEFT)
+        local size = measure( text, &=style, &=span )
+        local pos = Box(size).positioned_within( Canvas.bounds, style.anchor )
+        x = pos.x
+        y = pos.y
+      endIf
+
       style.anchor = Anchor.TOP_LEFT
 
       local prev_info : FontCharacterInfo?
       local x1 = x
-      forEach (ch in text)
+      forEach (i in i1..i2)
+        local ch = text[i]
         if (ch == '\n')
           x = x1
           y += height
@@ -76,15 +92,15 @@ class Font
                   ++ki
                   loop (n)
                     if (kerning[ki] == ch)
-                      x += kerning[ki+1]
+                      x += Int32( kerning[ki+1] * scale_x )
                       escapeLoop
                     endIf
                     ki += 2
                   endLoop
                 endIf
               endIf
-              info.image.draw( XY(x+info.offset_x,y), style )
-              x += info.advance_x
+              info.image.draw( XY(x+(info.offset_x*scale_x).floor,y), style )
+              x += Int32( info.advance_x * scale_x )
             endBlock
           endIf
           prev_info = info
@@ -98,22 +114,36 @@ class Font
         return characters[ ch ]
       endIf
 
-    method measure( text:String )->XY
+    method height->Int32
+      return @height * scale.y
+
+    method measure( text:String, style=Style():Style, span=null:Span? )->XY
       use builder = StringBuilder.pool
         builder.print( text )
-        return measure( builder )
+        return measure( builder, &=style, &=span )
       endUse
 
-    method measure( text:StringBuilder )->XY
+    method measure( text:StringBuilder, style=Style():Style, span=null:Span? )->XY
+      if (not span) span = Span(0,text.count)
+      local i1 = span.value.index
+      local i2 = (i1 + span.value.count) - 1
+
+      localize height
+      height *= style.scale.y
+      local scale_x = style.scale.x
+      scale_x *= style.scale.x
+
       local w = 0
       local max_w = 0
       local h = 0
       local prev_info : FontCharacterInfo?
-      forEach (ch in text)
+      forEach (i in i1..i2)
+        local ch = text[i]
         if (ch == '\n')
           max_w .= or_larger( w )
           w = 0
           h += height
+          prev_info = null
         else
           local info = this[ch]
           if (info)
@@ -124,14 +154,14 @@ class Font
                 ++ki
                 loop (n)
                   if (kerning[ki] == ch)
-                    w += kerning[ki+1]
+                    w += Int32( kerning[ki+1] * scale_x )
                     escapeLoop
                   endIf
                   ki += 2
                 endLoop
               endIf
             endIf
-            w += info.value.advance_x
+            w += Int32( info.value.advance_x * scale.x )
           endIf
           prev_info = info
         endIf
@@ -141,6 +171,14 @@ class Font
       h += height
 
       return XY( max_w, h )
+
+    method set_height( new_height:Int32 )
+      @scale = XY( scale.x, new_height/Real64(@height) )
+
+    method set_scale( @scale )
+
+    method set_scale( k:Real64 )
+      @scale = XY(k,k)
 endClass
 
 class FontCharacterInfo( character:Character, offset_x:Int32, advance_x:Int32, kerning_index:Int32, image:Image ) [compound]
