@@ -5,6 +5,6 @@ augment Image
   GLOBAL METHODS
     method create( name:String )->Image
       <replace>
-      return TextureImage( ImageAsset(name) )
+      return Image( ImageAsset(name) )
 endAugment
 

@@ -1,0 +1,168 @@
+module Balefire
+
+class TextureAtlasBuilder
+  PROPERTIES
+    max_size : Int32
+    pages    = TextureAtlasPage[]
+    page     : TextureAtlasPage
+
+  METHODS
+    method init( max_size=4096 )
+
+    method description->String
+      return pages.description
+
+    method perform_layout( placements:TextureAtlasPlacement[] )->Logical
+      if (placements.is_empty) return true
+
+      TextureAtlasPlacement.sort( placements )
+
+      local any_errors = false
+      while (placements.count)
+        page = TextureAtlasPage( pages.count, max_size, max_size )
+        pages.add( page )
+        if (not page.perform_layout(placements,0,0,max_size,max_size))
+          local w = placements.first.width
+          local h = placements.first.height
+          placements.first.error =
+              "$x$ image is too large to fit on a $x$ image page."...
+              (w,h,max_size,max_size)
+          placements.remove_first
+          any_errors = true
+        endIf
+      endWhile
+
+      # Try reducing the size of the last page by shrinking the layout
+      local last_page = pages.last
+      local order = true
+      loop
+        local w = last_page.width
+        local h = last_page.height
+
+        order = not order
+        if (order)
+          if (last_page.redo_placement(w/2,h)) nextIteration
+          if (last_page.redo_placement(w,h/2)) nextIteration
+        else
+          if (last_page.redo_placement(w,h/2)) nextIteration
+          if (last_page.redo_placement(w/2,h)) nextIteration
+        endIf
+        last_page.redo_placement( w, h )
+        escapeLoop
+      endLoop
+
+      return any_errors
+
+endClass
+
+class TextureAtlasPage
+  PROPERTIES
+    index      : Int32
+    width      : Int32
+    height     : Int32
+    placements = TextureAtlasPlacement[]
+
+  METHODS
+    method init( index, width, height )
+
+    method description->String
+      return "$x$"(width,height)
+
+    method perform_layout( pending_placements:TextureAtlasPlacement[], sx:Int32, sy:Int32, sw:Int32, sh:Int32 )->Logical
+      # Find the largest placement there's room for (including a 1-pixel border around the edge),
+      # delete it from the list, and then recursively place any remaining pending placements.
+      forEach (placement in pending_placements)
+        local w = (placement.width  + 2)->Int32
+        local h = (placement.height + 2)->Int32
+        if (w <= sw and h <= sh)
+          placement.page = this
+          placement.position = XY(sx+1,sy+1)
+          pending_placements.remove( placement )
+          placements.add( placement )
+
+          # We've just placed 'A', now recursively fill areas 'B' and 'C':
+          #
+          # AAA|BBBBBB
+          # AAA|BBBBBB
+          # ---+------
+          # CCCCCCCCCC
+          # CCCCCCCCCC
+          # CCCCCCCCCC
+          perform_layout( pending_placements, sx+w, sy,   sw-w, h )     # B
+          perform_layout( pending_placements, sx,   sy+h, sw,   sh-h )  # C
+
+          return true
+        endIf
+      endForEach
+
+      # Unable to place any
+      return false
+
+    method redo_placement( width, height )->Logical
+      # Returns true if all placements fit in the new size.
+      local og_placements      = placements.cloned
+      local pending_placements = placements.cloned
+      placements.clear
+      TextureAtlasPlacement.sort( pending_placements )
+      perform_layout( pending_placements, 0, 0, width, height )
+
+      if (pending_placements.is_empty) return true
+      placements = og_placements
+      return false
+
+    method to->Bitmap
+      local bitmap = Bitmap( width, height, Color.BLUE )
+      forEach (p in placements)
+        local pos  = p.position
+        local size = p.size
+
+        p.bitmap.blit( bitmap, pos )
+
+        # Extend each edge 1 pixel to prevent rendering artifacts
+        bitmap.blit( Box(pos,size.x,1),                bitmap, pos - XY(0,1) )  # top
+        bitmap.blit( Box(pos+XY(0,size.y-1),size.x,1), bitmap, pos + size.yv )  # bottom
+
+        bitmap.blit( Box(pos-XY(0,1),1,size.y+2),         bitmap, pos-XY(1,1) )         # left
+        bitmap.blit( Box(pos+size.xv-XY(1,1),1,size.y+2), bitmap, pos+size.xv-XY(0,1) ) # right
+      endForEach
+      return bitmap
+
+endClass
+
+class TextureAtlasPlacement
+  PROPERTIES
+    page     : TextureAtlasPage
+    bitmap   : Bitmap
+    position : XY      # placed position on atlas page
+    error    : String
+
+  METHODS
+    method init( bitmap )
+
+    method bounds->Box
+      return Box( position, size )
+
+    method height->Int32
+      return bitmap.height
+
+    method size->XY
+      return XY(width,height)
+
+    method width->Int32
+      return bitmap.width
+
+  GLOBAL METHODS
+    method sort( placements:TextureAtlasPlacement[] )
+      InsertionSort<<TextureAtlasPlacement>>.sort( placements,
+          function(a:TextureAtlasPlacement,b:TextureAtlasPlacement)->Logical
+            # 'a' should come before 'b' when:
+            if (a.height > b.height) return true
+            if (a.height < b.height) return false
+            # Heights are equal
+
+            return (a.width > b.width)
+          endFunction
+      )
+
+endClass
+

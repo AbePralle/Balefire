@@ -1,5 +1,35 @@
 module Balefire
 uses Plasmacore [export]
+uses Geometry [export]
+uses Bitmap   [export]
 
+$essential Bitmap::Bitmap.create(Int32,Int32)
+
+$include "Balefire/Font.rogue"
+$include "Balefire/FreeTypeFont.rogue"
 $include "Balefire/Image.rogue"
 $include "Balefire/ImageAsset.rogue"
+$include "Balefire/TextureAtlasBuilder.rogue"
+
+class Balefire [essential singleton]
+  PROPERTIES
+    font  : Font
+
+  METHODS
+    method init
+      Plasmacore.on_configure = this=>configure
+      Plasmacore.on_update = this=>update
+      Plasmacore.on_draw = this=>draw
+
+    method configure
+      local ft_font = FreeTypeFont(["Helvetica","Arial"],16*2)
+      ft_font.add( forEach in 32..126 )
+      font = ft_font->Font
+
+    method draw
+      Canvas.clear
+      font.draw( "Balefire Engine", Canvas.center )
+
+    method update
+endClass
+

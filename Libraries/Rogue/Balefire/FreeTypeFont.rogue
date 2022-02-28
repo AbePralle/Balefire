@@ -1,0 +1,101 @@
+module Balefire
+uses Utility/FreeType
+
+class FreeTypeFont
+  GLOBAL METHODS
+    method create( name:String, pixel_height:Int32 )->FreeTypeFont
+      local face = FreeTypeFace( name, pixel_height )
+      if (face) return FreeTypeFont( name, pixel_height, face )
+      return null
+
+    method create( names:String[], pixel_height:Int32 )->FreeTypeFont
+      forEach (name in names)
+        local result = FreeTypeFont( name, pixel_height )
+        if (result) return result
+      endForEach
+      return null
+
+  PROPERTIES
+    name        : String
+    height      : Int32
+    face        : FreeTypeFace
+    characters  = FreeTypeCharacter[]
+    lookup      = Table<<Character,FreeTypeCharacter>>()
+    is_rendered = false
+
+  METHODS
+    method init( name, height, face )
+
+    method add( ch:Character )
+      if (not lookup.contains(ch))
+        local info = FreeTypeCharacter( ch )
+        characters.add( info )
+        lookup[ ch ] = info
+        is_rendered = false
+      endIf
+
+    method description->String
+      return "$ $px" (name,height)
+
+    method render
+      if (is_rendered) return
+      is_rendered = true
+      characters.sort( (a,b) => (a.character <= b.character) )
+      face.render( characters )
+
+    method to->Font
+      render
+
+      local builder = TextureAtlasBuilder()
+      local placements = TextureAtlasPlacement[]( characters.count )
+      placements.add( FreeTypeFontCharacterPlacement(forEach in characters) )
+
+      builder.perform_layout( placements.cloned )
+
+      local pages = Texture[]
+      forEach (page at i in builder.pages)
+        pages.add( Texture(page->Bitmap.[premultiply_alpha]) )
+      endForEach
+
+      local font = Font( height )
+      local kerning_list = Int32[][0]
+
+      forEach (info in placements)
+        local texture = pages[info.page.index]
+        local ch = info->(as FreeTypeFontCharacterPlacement).character
+        local kerning_index = 0
+        if (face.kerning and face.kerning.contains(ch.character))
+          kerning_index = kerning_list.count
+          local alts = face.kerning[ch.character]
+          kerning_list.add( alts.count )
+          forEach (entry in alts.entries)
+            kerning_list.add( entry.key )
+            kerning_list.add( entry.value )
+          endForEach
+        endIf
+
+        font.add(
+          FontCharacterInfo(
+            ch.character,
+            ch.offset_x,
+            ch.advance_x,
+            kerning_index,
+            Image( pages[info.page.index], info.bounds )
+          )
+        )
+      endForEach
+
+      font.kerning = kerning_list
+
+      return font
+endClass
+
+class FreeTypeFontCharacterPlacement : TextureAtlasPlacement
+  PROPERTIES
+    character : FreeTypeCharacter
+
+  METHODS
+    method init( character )
+      prior.init( character.bitmap )
+endClass
+

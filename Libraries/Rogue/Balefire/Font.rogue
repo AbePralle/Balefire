@@ -1,0 +1,150 @@
+module Balefire
+
+class Font
+  PROPERTIES
+    height          : Real64
+    original_height : Real64
+    characters      = FontCharacterInfo[](128)
+    kerning         : Int32[]
+      # Format; kerning[] is indexed into by the "prev_ch" FontCharacterInfo.
+      #
+      #   [count_x,next1,offset1,next2,offset2,..., count_y,next1,offset1,...]
+      #
+      # Conceptual Equivalent:
+      #   local prev_ch = ... : Character
+      #   local cur_ch = ...  : Character
+      #   if (kerning and kerning.contains(prev_ch) and kerning[prev_ch].contains(cur_ch))
+      #     cursor_x += kerning[prev_ch][cur_ch]
+      #   endIf
+      #
+      # This kerning data structure:
+      #   local prev_ch = ... : FontCharacterInfo
+      #   local cur_ch = ...  : FontCharacterInfo
+      #   local i = prev_ch.kerning_index
+      #   if (i)
+      #     local n = kerning[i]
+      #     ++i
+      #     loop n
+      #       if (kerning[i] == prev_ch.character)
+      #         cursor_x += kerning[i+1]
+      #         escapeLoop
+      #       endIf
+      #       i += 2
+      #     endLoop
+      #   endIf
+      #
+
+  METHODS
+    method init( original_height )
+      height = original_height
+
+    method add( ch:FontCharacterInfo )
+      characters.expand_to_include( ch.character )
+      characters[ch.character] = ch
+
+    method draw( text:String, position:XY, style=Style():Style )
+      draw( text, position.x, position.y, style )
+
+    method draw( text:StringBuilder, position:XY, style=Style():Style )
+      draw( text, position.x, position.y, style )
+
+    method draw( text:String, x:Real64, y:Real64, style=Style():Style )
+      use builder = StringBuilder.pool
+        builder.reserve( text.count )
+        builder.print( text )
+        draw( builder, x, y, style )
+      endUse
+
+    method draw( text:StringBuilder, x:Real64, y:Real64, style=Style():Style )
+      style.anchor = Anchor.TOP_LEFT
+
+      local prev_info : FontCharacterInfo?
+      local x1 = x
+      forEach (ch in text)
+        if (ch == '\n')
+          x = x1
+          y += height
+          prev_info = null
+        else
+          local info = this[ch]
+          if (info)
+            block info = info.value
+              if (prev_info)
+                local ki = prev_info.value.kerning_index
+                if (ki)
+                  local n = kerning[ki]
+                  ++ki
+                  loop (n)
+                    if (kerning[ki] == ch)
+                      x += kerning[ki+1]
+                      escapeLoop
+                    endIf
+                    ki += 2
+                  endLoop
+                endIf
+              endIf
+              info.image.draw( XY(x+info.offset_x,y), style )
+              x += info.advance_x
+            endBlock
+          endIf
+          prev_info = info
+        endIf
+      endForEach
+
+    method get( ch:Character )->FontCharacterInfo?
+      if (ch >= characters.count)
+        return null
+      else
+        return characters[ ch ]
+      endIf
+
+    method measure( text:String )->XY
+      use builder = StringBuilder.pool
+        builder.print( text )
+        return measure( builder )
+      endUse
+
+    method measure( text:StringBuilder )->XY
+      local w = 0
+      local max_w = 0
+      local h = 0
+      local prev_info : FontCharacterInfo?
+      forEach (ch in text)
+        if (ch == '\n')
+          max_w .= or_larger( w )
+          w = 0
+          h += height
+        else
+          local info = this[ch]
+          if (info)
+            if (prev_info)
+              local ki = prev_info.value.kerning_index
+              if (ki)
+                local n = kerning[ki]
+                ++ki
+                loop (n)
+                  if (kerning[ki] == ch)
+                    w += kerning[ki+1]
+                    escapeLoop
+                  endIf
+                  ki += 2
+                endLoop
+              endIf
+            endIf
+            w += info.value.advance_x
+          endIf
+          prev_info = info
+        endIf
+      endForEach
+
+      max_w .= or_larger( w )
+      h += height
+
+      return XY( max_w, h )
+endClass
+
+class FontCharacterInfo( character:Character, offset_x:Int32, advance_x:Int32, kerning_index:Int32, image:Image ) [compound]
+  # kerning
+  #   Advance mappings for this as the previous character.
+endClass
+
